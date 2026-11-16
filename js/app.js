@@ -140,8 +140,9 @@ const handCallbacks = {
     );
   },
   onPinch: () => {
-    tree.triggerBloom();
-    showToast('绽放特效已触发');
+    // 捏合抓取：礼物放大到中央并展开祝福；再捏合收起
+    const opened = tree.toggleGiftFocus();
+    showToast(opened ? '🎁 圣诞节快乐' : '已收起礼物');
   }
 };
 

@@ -81,6 +81,11 @@ export class ChristmasTree {
     this.scale = 1;
     this.bloom = 0;
 
+    // 礼物聚焦展示（捏合触发：礼物放大到中央并打开露出祝福语）
+    this.giftFocus = 0;          // 当前动画进度 0→1
+    this.giftFocusActive = false;
+    this.giftFocusTimer = 0;     // 自动收起倒计时（按帧）
+
     // 特效
     this.fxEnabled = false;
     this.meteors = [];
@@ -207,6 +212,14 @@ export class ChristmasTree {
   get colorLabel() { return LABELS[this.colorMode]; }
 
   triggerBloom() { this.bloom = 1; }
+
+  /* 捏合触发：切换"礼物放大展示"。返回 true=打开, false=收起 */
+  toggleGiftFocus() {
+    this.giftFocusActive = !this.giftFocusActive;
+    this.giftFocusTimer = this.giftFocusActive ? 60 * 8 : 0; // 展示约 8 秒后自动收起
+    if (this.giftFocusActive) this.triggerBloom();
+    return this.giftFocusActive;
+  }
 
   setGestureTargets({ rotation, spread, scale } = {}) {
     this.hasGesture = true;
@@ -344,6 +357,126 @@ export class ChristmasTree {
     ctx.globalAlpha = 1;
   }
 
+  /* 礼物聚焦展示：放大到屏幕中央、开盖、露出「圣诞节快乐」 */
+  _drawGiftFocus() {
+    const f = this.giftFocus;
+    if (f <= 0.002) return;
+    const { ctx, W, H, cx } = this;
+    const pal = PALETTES[this.colorMode];
+    const gcol = GIFT_COLORS[this.colorMode][0];
+
+    // 缓动
+    const e = 1 - Math.pow(1 - f, 3);
+    const gx = cx;
+    const gy = H * 0.50;
+    const base = Math.min(W, H);
+    const box = base * 0.24 * e;          // 盒身边长
+    const open = clamp((f - 0.35) / 0.65, 0, 1); // 开盖进度
+
+    ctx.save();
+
+    // 半透明暗色遮罩：压暗背景树与原标题，突出礼物
+    ctx.fillStyle = `rgba(3,5,12,${0.62 * e})`;
+    ctx.fillRect(0, 0, W, H);
+
+    // 中心柔光
+    const halo = ctx.createRadialGradient(gx, gy, 0, gx, gy, box * 1.9);
+    halo.addColorStop(0, hexToRgba(pal[0], 0.28 * e));
+    halo.addColorStop(0.5, hexToRgba(pal[0], 0.10 * e));
+    halo.addColorStop(1, hexToRgba(pal[0], 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(gx - box * 2, gy - box * 2, box * 4, box * 4);
+
+    // 环粒子（绽放感）
+    if (f > 0.05) {
+      const n = 26;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + this.time * 0.6;
+        const rr = box * (1.05 + 0.35 * Math.sin(this.time * 2 + i));
+        const px = gx + Math.cos(a) * rr;
+        const py = gy + Math.sin(a) * rr * 0.92;
+        const tw = 0.5 + 0.5 * Math.sin(this.time * 3.5 + i * 1.7);
+        ctx.globalAlpha = e * tw;
+        const sz = base * 0.028 * (0.7 + 0.6 * tw);
+        ctx.drawImage(this.fxSprites[i % 3], px - sz / 2, py - sz / 2, sz, sz);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // 盒盖（随开盖进度上飞、淡出）
+    const lidY = gy - box * 0.55 - open * box * 0.34;
+    ctx.save();
+    ctx.globalAlpha = e * (1 - open * 0.35);
+    ctx.translate(gx, lidY);
+    ctx.rotate(-open * 0.32);
+    ctx.shadowBlur = 22;
+    ctx.shadowColor = hexToRgba(gcol, 0.9);
+    ctx.fillStyle = gcol;
+    ctx.fillRect(-box * 0.60, -box * 0.14, box * 1.20, box * 0.28);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = pal[5];
+    ctx.fillRect(-box * 0.07, -box * 0.14, box * 0.14, box * 0.28);
+    ctx.beginPath();
+    // 蝴蝶结
+    ctx.ellipse(-box * 0.20, -box * 0.14, box * 0.16, box * 0.10, -0.4, 0, TAU);
+    ctx.ellipse(box * 0.20, -box * 0.14, box * 0.16, box * 0.10, 0.4, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    // 盒内金光（开盖后从盒口射出）
+    if (open > 0) {
+      const beam = ctx.createLinearGradient(0, gy - box * 0.9, 0, gy - box * 0.1);
+      beam.addColorStop(0, hexToRgba(pal[5], 0));
+      beam.addColorStop(1, hexToRgba(pal[5], 0.55 * open));
+      ctx.fillStyle = beam;
+      ctx.beginPath();
+      ctx.moveTo(gx - box * 0.1, gy - box * 0.1);
+      ctx.lineTo(gx - box * 0.5, gy - box * 0.95);
+      ctx.lineTo(gx + box * 0.5, gy - box * 0.95);
+      ctx.lineTo(gx + box * 0.1, gy - box * 0.1);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 盒身
+    ctx.globalAlpha = e;
+    ctx.shadowBlur = 26;
+    ctx.shadowColor = hexToRgba(gcol, 0.85);
+    ctx.fillStyle = gcol;
+    ctx.fillRect(gx - box * 0.55, gy - box * 0.30, box * 1.10, box * 0.86);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = hexToRgba('#000000', 0.16);
+    ctx.fillRect(gx - box * 0.55, gy + box * 0.28, box * 1.10, box * 0.28);
+    // 丝带十字
+    ctx.fillStyle = pal[5];
+    ctx.fillRect(gx - box * 0.09, gy - box * 0.30, box * 0.18, box * 0.86);
+    ctx.fillRect(gx - box * 0.55, gy - box * 0.02, box * 1.10, box * 0.16);
+
+    // 祝福语
+    if (open > 0.02) {
+      const fontSize = clamp(base * 0.082, 22, 66);
+      ctx.globalAlpha = e * open;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const ty = gy - box * 1.18 - Math.sin(this.time * 1.6) * box * 0.03;
+      ctx.font = `700 ${fontSize}px "PingFang SC", "Microsoft YaHei", sans-serif`;
+      if ('letterSpacing' in ctx) ctx.letterSpacing = `${fontSize * 0.12}px`;
+      ctx.shadowBlur = 30;
+      ctx.shadowColor = hexToRgba(pal[0], 0.95);
+      ctx.fillStyle = pal[5];
+      ctx.fillText('圣诞节快乐', gx, ty);
+      // 描边增强
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = Math.max(1, fontSize * 0.028);
+      ctx.strokeStyle = hexToRgba(pal[0], 0.75);
+      ctx.strokeText('圣诞节快乐', gx, ty);
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    }
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
   _loop() {
     const tick = (now) => {
       const dt = this._last ? Math.min((now - this._last) / 16.67, 3) : 1;
@@ -358,6 +491,15 @@ export class ChristmasTree {
       this.scale += (this.targetScale - this.scale) * 0.10 * dt;
       this.bloom *= Math.pow(0.93, dt);
       if (this.bloom < 0.002) this.bloom = 0;
+
+      // 礼物聚焦动画 + 自动收起
+      if (this.giftFocusActive) {
+        this.giftFocusTimer -= dt;
+        if (this.giftFocusTimer <= 0) this.giftFocusActive = false;
+      }
+      const gfTarget = this.giftFocusActive ? 1 : 0;
+      this.giftFocus += (gfTarget - this.giftFocus) * 0.12 * dt;
+      if (Math.abs(gfTarget - this.giftFocus) < 0.002) this.giftFocus = gfTarget;
 
       this._updateFx(dt);
       this._draw();
@@ -496,5 +638,8 @@ export class ChristmasTree {
 
     // 流星与烟花绘制在最上层
     this._drawFx();
+
+    // 礼物聚焦展示（捏合触发，盖在最上层）
+    this._drawGiftFocus();
   }
 }
