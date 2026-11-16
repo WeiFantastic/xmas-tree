@@ -204,9 +204,9 @@ body.purple .tap-ring{border-color:var(--purple);box-shadow:0 0 0 0 rgba(181,123
   .cam-btn{width:auto;flex:1 1 auto;padding:10px;font-size:12px;min-width:150px}
   .guide{
     margin-top:0;width:100%;display:grid;grid-template-columns:repeat(2,1fr);
-    gap:2px 12px;max-height:58px;overflow-y:auto;overflow-x:hidden;
-    -webkit-overflow-scrolling:touch;scrollbar-width:thin;
-    scrollbar-color:rgba(255,255,255,.3) transparent;
+    gap:2px 12px;max-height:76px;overflow-y:auto;overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;touch-action:pan-y;
+    scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.3) transparent;
     padding-right:5px;box-sizing:border-box;
   }
   .guide::-webkit-scrollbar{width:3px}
@@ -229,7 +229,7 @@ body.purple .tap-ring{border-color:var(--purple);box-shadow:0 0 0 0 rgba(181,123
 }
 
 @media (max-width:380px){
-  .guide{grid-template-columns:1fr 1fr;max-height:44px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+  .guide{grid-template-columns:1fr 1fr;max-height:76px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y}
   .panel{gap:8px}
 }
 
