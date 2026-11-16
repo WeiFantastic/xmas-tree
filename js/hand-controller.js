@@ -41,12 +41,37 @@ export class HandController {
     this.smInit = false;
   }
 
-  /* 初始化模型：优先 GPU，失败自动回退 CPU */
-  async init() {
+  /* 给 Promise 加超时竞速：超时后抛错，让调用方走下一个后端，避免永久挂起 */
+  _withTimeout(promise, ms, label) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(label + '超时')), ms);
+    });
+    // 原 Promise 若稍后 reject，避免未处理的拒绝警告
+    if (promise && typeof promise.catch === 'function') promise.catch(() => {});
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  /* 是否移动端：优先用 CPU 后端（手机 GPU delegate 常永久挂起）。
+   * 同时用 UA 与「触摸 + 窄屏」双判据，覆盖 App 内置浏览器 UA 伪装成桌面的情况。 */
+  _isMobile() {
+    const ua = navigator.userAgent || '';
+    if (/Android|iPhone|iPad|iPod|Mobile|Silk|MicroMessenger|QQ\//i.test(ua)) return true;
+    const touchPoints = navigator.maxTouchPoints || 0;
+    return touchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) < 820;
+  }
+
+  /* 初始化模型：移动端直接用 CPU；桌面端 GPU 优先，失败/超时回退 CPU。
+   * onProgress(text) 用于把加载阶段反馈给 UI。 */
+  async init(onProgress) {
+    const report = typeof onProgress === 'function' ? onProgress : () => {};
     const wasmUrl = new URL('../vendor/mediapipe/wasm/', import.meta.url).href;
     const modelUrl = new URL('../models/hand_landmarker.task', import.meta.url).href;
 
-    const vision = await FilesetResolver.forVisionTasks(wasmUrl);
+    report('正在加载手势引擎…');
+    const vision = await this._withTimeout(
+      FilesetResolver.forVisionTasks(wasmUrl), 25000, '手势引擎加载'
+    );
 
     const options = (delegate) => ({
       baseOptions: { modelAssetPath: modelUrl, delegate },
@@ -57,14 +82,25 @@ export class HandController {
       minTrackingConfidence: 0.55
     });
 
-    try {
-      this.landmarker = await HandLandmarker.createFromOptions(vision, options('GPU'));
-      this.delegate = 'GPU';
-    } catch (e) {
-      this.landmarker = await HandLandmarker.createFromOptions(vision, options('CPU'));
-      this.delegate = 'CPU';
+    // 移动端只试 CPU；桌面端先 GPU 再回退 CPU
+    const delegates = this._isMobile() ? ['CPU'] : ['GPU', 'CPU'];
+    let lastErr;
+    for (const d of delegates) {
+      report(d === 'GPU' ? '正在加载模型（GPU）…' : '正在加载模型…');
+      try {
+        this.landmarker = await this._withTimeout(
+          HandLandmarker.createFromOptions(vision, options(d)),
+          30000,
+          d + ' 模型加载'
+        );
+        this.delegate = d;
+        return d;
+      } catch (e) {
+        lastErr = e;
+        console.warn('[手势] ' + d + ' 后端加载失败：' + ((e && e.message) || e));
+      }
     }
-    return this.delegate;
+    throw lastErr || new Error('模型加载失败');
   }
 
   /* 绑定摄像头流并开始逐帧检测 */

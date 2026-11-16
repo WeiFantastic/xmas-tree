@@ -189,7 +189,7 @@ async function enableCamera() {
           showToast('绽放特效已触发');
         }
       });
-      const delegate = await handController.init();
+      const delegate = await handController.init((msg) => setCamButton(true, msg));
       console.info('[手势] 模型加载完成，推理后端：' + delegate);
     }
     await handController.start(stream);
@@ -198,8 +198,13 @@ async function enableCamera() {
   } catch (err) {
     // 摄像头已开但手势模型失败：保留预览，明确提示，换色仍可用
     setCamButton(true, '关闭摄像头');
+    const reason = (err && err.message) || '未知错误';
+    const timedOut = /超时/i.test(reason);
+    const tip = timedOut
+      ? '加载超时，可能是网络较慢或当前浏览器对 WebAssembly 支持不佳。\n建议：换用最新版 Chrome / Safari，或刷新页面重试。'
+      : '请刷新页面重试，或更换最新版 Chrome / Safari 浏览器。';
     showAlert('手势模型加载失败',
-      `${(err && err.message) || '未知错误'}。\n摄像头预览仍可用，点击圣诞树换色不受影响。`);
+      `${reason}。\n${tip}\n摄像头预览与点击换色不受影响。`);
   } finally {
     busy = false;
   }
