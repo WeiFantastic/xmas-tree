@@ -113,6 +113,53 @@ function cameraError(err) {
   }
 }
 
+/* ---------- 手势控制器（复用同一实例，供预加载与授权共用） ---------- */
+function getController() {
+  if (!handController) {
+    handController = new HandController({
+      video: camVideo,
+      overlay: camOverlay,
+      onUpdate: (g) => {
+        if (!g) {
+          tree.clearGesture();
+          setGestureLive('手势状态：未检测到手', false);
+          return;
+        }
+        const rotation = (0.5 - g.x) * Math.PI * 2.2;
+        const yScale = clamp(1 + (0.5 - g.y) * 0.9, 0.70, 1.45);
+        const zScale = clamp(0.78 + g.handSize * 1.8, 0.82, 1.25);
+        const scale = clamp(yScale * zScale, 0.65, 1.55);
+        const spread = 0.12 + g.openness * 0.88;
+
+        // 手势只改旋转/缩放/聚散，从不触碰颜色
+        tree.setGestureTargets({ rotation, spread, scale });
+
+        const shape = g.openness > 0.7 ? '张开手掌' : (g.openness < 0.3 ? '握拳' : '半张手');
+        setGestureLive(
+          `手势：${shape} · 旋转 ${Math.round(rotation * 57)}°` + (g.pinching ? ' · 捏合' : ''),
+          true
+        );
+      },
+      onPinch: () => {
+        tree.triggerBloom();
+        showToast('绽放特效已触发');
+      }
+    });
+  }
+  return handController;
+}
+
+/* 页面打开即在后台预加载模型，把 17MB 下载提前；不打扰 UI，失败静默 */
+function preloadModel() {
+  try {
+    getController().init()
+      .then((d) => console.info('[手势] 后台预加载完成：' + d))
+      .catch((e) => console.warn('[手势] 后台预加载未完成：' + ((e && e.message) || e)));
+  } catch (e) {
+    console.warn('[手势] 预加载跳过：' + ((e && e.message) || e));
+  }
+}
+
 /* ---------- 开启摄像头 + 手势 ---------- */
 async function enableCamera() {
   if (busy) return;
@@ -158,41 +205,10 @@ async function enableCamera() {
   setCamButton(true, '正在加载手势模型…');
 
   try {
-    if (!handController) {
-      handController = new HandController({
-        video: camVideo,
-        overlay: camOverlay,
-        onUpdate: (g) => {
-          if (!g) {
-            tree.clearGesture();
-            setGestureLive('手势状态：未检测到手', false);
-            return;
-          }
-          // x → 旋转；y → 缩放；手远近 → 缩放；张开度 → 粒子聚散
-          const rotation = (0.5 - g.x) * Math.PI * 2.2;
-          const yScale = clamp(1 + (0.5 - g.y) * 0.9, 0.70, 1.45);
-          const zScale = clamp(0.78 + g.handSize * 1.8, 0.82, 1.25);
-          const scale = clamp(yScale * zScale, 0.65, 1.55);
-          const spread = 0.12 + g.openness * 0.88;
-
-          // 注意：这里从不调用 tree.setColorMode / toggleColor
-          tree.setGestureTargets({ rotation, spread, scale });
-
-          const shape = g.openness > 0.7 ? '张开手掌' : (g.openness < 0.3 ? '握拳' : '半张手');
-          setGestureLive(
-            `手势：${shape} · 旋转 ${Math.round(rotation * 57)}°` + (g.pinching ? ' · 捏合' : ''),
-            true
-          );
-        },
-        onPinch: () => {
-          tree.triggerBloom();
-          showToast('绽放特效已触发');
-        }
-      });
-      const delegate = await handController.init((msg) => setCamButton(true, msg));
-      console.info('[手势] 模型加载完成，推理后端：' + delegate);
-    }
-    await handController.start(stream);
+    const ctrl = getController();
+    const delegate = await ctrl.init((msg) => setCamButton(true, msg));
+    console.info('[手势] 模型加载完成，推理后端：' + delegate);
+    await ctrl.start(stream);
     setCamButton(true, '关闭摄像头');
     showToast('手势控制已开启，在摄像头前试试张开手掌');
   } catch (err) {
@@ -201,7 +217,7 @@ async function enableCamera() {
     const reason = (err && err.message) || '未知错误';
     const timedOut = /超时/i.test(reason);
     const tip = timedOut
-      ? '加载超时，可能是网络较慢或当前浏览器对 WebAssembly 支持不佳。\n建议：换用最新版 Chrome / Safari，或刷新页面重试。'
+      ? '首次使用需下载约 17MB 模型文件，当前网络偏慢。\n建议：连接 WiFi 后刷新页面重试（模型会缓存，第二次更快）；或换用最新版 Chrome / Safari。'
       : '请刷新页面重试，或更换最新版 Chrome / Safari 浏览器。';
     showAlert('手势模型加载失败',
       `${reason}。\n${tip}\n摄像头预览与点击换色不受影响。`);
@@ -264,3 +280,8 @@ window.addEventListener('beforeunload', () => {
 document.body.dataset.color = 'default';
 setPill(colorPill, 'pill-default', '默认配色');
 setPill(cameraPill, 'pill-off', '摄像头未开启');
+
+// 页面一打开就在后台预加载模型，等用户点授权时通常已就绪
+window.addEventListener('load', () => {
+  setTimeout(preloadModel, 300);
+});

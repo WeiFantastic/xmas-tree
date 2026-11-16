@@ -61,16 +61,26 @@ export class HandController {
     return touchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) < 820;
   }
 
-  /* 初始化模型：移动端直接用 CPU；桌面端 GPU 优先，失败/超时回退 CPU。
-   * onProgress(text) 用于把加载阶段反馈给 UI。 */
-  async init(onProgress) {
+  /* 初始化模型（幂等）：可安全地被预加载与授权流程重复调用。
+   * 已加载则直接返回；正在加载则复用同一个 Promise；失败后清空以便重试。 */
+  init(onProgress) {
+    if (this.landmarker) return Promise.resolve(this.delegate);
+    if (this._initPromise) return this._initPromise;
+    this._initPromise = this._doInit(onProgress)
+      .then((d) => { this._initPromise = null; return d; })
+      .catch((e) => { this._initPromise = null; throw e; });
+    return this._initPromise;
+  }
+
+  async _doInit(onProgress) {
     const report = typeof onProgress === 'function' ? onProgress : () => {};
     const wasmUrl = new URL('../vendor/mediapipe/wasm/', import.meta.url).href;
     const modelUrl = new URL('../models/hand_landmarker.task', import.meta.url).href;
 
     report('正在加载手势引擎…');
+    // 国内网络下载 wasm 较慢，给足 60 秒
     const vision = await this._withTimeout(
-      FilesetResolver.forVisionTasks(wasmUrl), 25000, '手势引擎加载'
+      FilesetResolver.forVisionTasks(wasmUrl), 60000, '手势引擎加载'
     );
 
     const options = (delegate) => ({
@@ -88,9 +98,10 @@ export class HandController {
     for (const d of delegates) {
       report(d === 'GPU' ? '正在加载模型（GPU）…' : '正在加载模型…');
       try {
+        // 模型 7.5MB，国内网络给足 90 秒
         this.landmarker = await this._withTimeout(
           HandLandmarker.createFromOptions(vision, options(d)),
-          30000,
+          90000,
           d + ' 模型加载'
         );
         this.delegate = d;
