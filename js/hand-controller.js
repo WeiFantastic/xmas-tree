@@ -44,8 +44,10 @@ export class HandController {
   /* 给 Promise 加超时竞速：超时后抛错，让调用方走下一个后端，避免永久挂起 */
   _withTimeout(promise, ms, label) {
     let timer;
+    const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const now = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(label + '超时')), ms);
+      timer = setTimeout(() => reject(new Error(label + '超时（已等待 ' + Math.round((now() - start) / 1000) + ' 秒）')), ms);
     });
     // 原 Promise 若稍后 reject，避免未处理的拒绝警告
     if (promise && typeof promise.catch === 'function') promise.catch(() => {});
@@ -78,10 +80,20 @@ export class HandController {
     const modelUrl = new URL('../models/hand_landmarker.task', import.meta.url).href;
 
     report('正在加载手势引擎…');
-    // 国内网络下载 wasm 较慢，给足 60 秒
-    const vision = await this._withTimeout(
-      FilesetResolver.forVisionTasks(wasmUrl), 60000, '手势引擎加载'
-    );
+    // 关键：部分安卓/国产浏览器（如 realme UI 内置浏览器）的 SIMD wasm 检测会误判，
+    // 编译 SIMD 版时永久挂起。移动端直接指定非 SIMD 版 wasm，绕过检测。
+    let vision;
+    if (this._isMobile()) {
+      vision = {
+        wasmLoaderPath: new URL('../vendor/mediapipe/wasm/vision_wasm_nosimd_internal.js', import.meta.url).href,
+        wasmBinaryPath: new URL('../vendor/mediapipe/wasm/vision_wasm_nosimd_internal.wasm', import.meta.url).href
+      };
+      console.info('[手势] 移动端：强制使用非 SIMD wasm');
+    } else {
+      vision = await this._withTimeout(
+        FilesetResolver.forVisionTasks(wasmUrl), 60000, '手势引擎加载'
+      );
+    }
 
     const options = (delegate) => ({
       baseOptions: { modelAssetPath: modelUrl, delegate },
