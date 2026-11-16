@@ -204,14 +204,8 @@ body.purple .tap-ring{border-color:var(--purple);box-shadow:0 0 0 0 rgba(181,123
   .cam-btn{width:auto;flex:1 1 auto;padding:10px;font-size:12px;min-width:150px}
   .guide{
     margin-top:0;width:100%;display:grid;grid-template-columns:repeat(2,1fr);
-    gap:2px 12px;max-height:76px;overflow-y:auto;overflow-x:hidden;
-    -webkit-overflow-scrolling:touch;touch-action:pan-y;
-    scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.3) transparent;
-    padding-right:5px;box-sizing:border-box;
+    gap:2px 12px;/* 不限制高度：按内容自然撑开，5 条说明始终完整显示 */
   }
-  .guide::-webkit-scrollbar{width:3px}
-  .guide::-webkit-scrollbar-thumb{background:rgba(255,255,255,.3);border-radius:3px}
-  .guide::-webkit-scrollbar-track{background:transparent}
   .guide-title{display:none}
   .guide-row{padding:2px 0;font-size:11px;border:0}
   .guide-row span{font-size:10px}
@@ -229,7 +223,7 @@ body.purple .tap-ring{border-color:var(--purple);box-shadow:0 0 0 0 rgba(181,123
 }
 
 @media (max-width:380px){
-  .guide{grid-template-columns:1fr 1fr;max-height:76px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+  .guide{grid-template-columns:1fr 1fr}
   .panel{gap:8px}
 }
 
